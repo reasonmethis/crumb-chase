@@ -26,10 +26,7 @@ export const PLAYER_RADIUS_FACTOR = 0.76; // Radius as fraction of TILE
 // Cat AI
 // ============================================
 
-export const CAT_BASE_SPEED_CELLS = 3.2;  // Base cat speed (cells/sec) - unused, levels override
-export const CAT_SPEED_IN_CRUMB = 0.25;   // Speed multiplier when in crumb (0.25 = 4x slower)
 export const CAT_RADIUS_FACTOR = 0.88;    // Radius as fraction of TILE
-export const CAT_EAT_RATE = 1.0;          // Crumb strength removed per second by a cat
 
 // Pathfinding
 export const A_STAR_RECALC_HZ = 5;        // Path recalculation frequency (per second)
@@ -85,18 +82,22 @@ export function getHoleRow() {
 // Level Configuration
 // ============================================
 
+// crumbSpeedFactor: speed multiplier when cat is in/approaching crumbs
+//   0 = cats cannot enter crumbs at all (crumbs are walls)
+//   0.25 = cats move at 25% speed in crumbs (4x slower)
+//   1 = no slowdown
 export const LEVEL_CONFIG = [
   null, // Level 0 doesn't exist
-  { cats: 1, speedFactor: 0.55 },
-  { cats: 1, speedFactor: 0.9 },
-  { cats: 2, speedFactor: 0.55 },
-  { cats: 2, speedFactor: 0.9 },
-  { cats: 2, speedFactor: 1.2 },
-  { cats: 3, speedFactor: 0.75 },
-  { cats: 3, speedFactor: 1.0 },
-  { cats: 3, speedFactor: 1.25 },
-  { cats: 3, speedFactor: 1.5 },
-  { cats: 4, speedFactor: 1.2 },
+  { cats: 1, speedFactor: 0.55, crumbSpeedFactor: 0 },     // L1: crumbs are walls
+  { cats: 1, speedFactor: 0.9,  crumbSpeedFactor: 0.15 },  // L2: very slow through crumbs
+  { cats: 2, speedFactor: 0.55, crumbSpeedFactor: 0.15 },
+  { cats: 2, speedFactor: 0.9,  crumbSpeedFactor: 0.20 },
+  { cats: 2, speedFactor: 1.2,  crumbSpeedFactor: 0.20 },
+  { cats: 3, speedFactor: 0.75, crumbSpeedFactor: 0.25 },
+  { cats: 3, speedFactor: 1.0,  crumbSpeedFactor: 0.25 },
+  { cats: 3, speedFactor: 1.25, crumbSpeedFactor: 0.30 },
+  { cats: 3, speedFactor: 1.5,  crumbSpeedFactor: 0.30 },
+  { cats: 4, speedFactor: 1.2,  crumbSpeedFactor: 0.35 },
 ];
 
 export const MAX_LEVEL = LEVEL_CONFIG.length - 1;
@@ -105,7 +106,7 @@ export const MAX_LEVEL = LEVEL_CONFIG.length - 1;
  * Get configuration for a specific level.
  * Clamps level to valid range [1, MAX_LEVEL].
  * @param {number} level - Level number
- * @returns {{cats: number, speedFactor: number}} Level configuration
+ * @returns {{cats: number, speedFactor: number, crumbSpeedFactor: number}} Level configuration
  */
 export function getLevelConfig(level) {
   const i = Math.max(1, Math.min(MAX_LEVEL, level));

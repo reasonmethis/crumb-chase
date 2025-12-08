@@ -377,10 +377,11 @@ function showToast(msg, ms = 1200) {
  * @param {number} colFrac - X position as fraction of grid width (0-1)
  * @param {number} rowFrac - Y position as fraction of grid height (0-1)
  * @param {number} speedCells - Movement speed in cells per second
+ * @param {number} crumbSpeedFactor - Speed multiplier in crumbs (0 = blocked, 1 = no slowdown)
  * @param {number} id - Unique cat identifier
  * @returns {Object} Cat object with position, pathfinding state, etc.
  */
-function makeCat(colFrac, rowFrac, speedCells, id) {
+function makeCat(colFrac, rowFrac, speedCells, crumbSpeedFactor, id) {
   const x = (Math.max(0, Math.min(Config.COLS - 1, Math.round(Config.COLS * colFrac))) + 0.5) * Config.TILE;
   const y = (Math.max(0, Math.min(Config.ROWS - 1, Math.round(Config.ROWS * rowFrac))) + 0.5) * Config.TILE;
   return {
@@ -389,6 +390,7 @@ function makeCat(colFrac, rowFrac, speedCells, id) {
     y,
     r: Config.TILE * Config.CAT_RADIUS_FACTOR,
     speedCells,
+    crumbSpeedFactor,      // Speed multiplier when in crumbs (0 = can't enter)
     color: getCSS('--cat'),
     path: [],              // Current A* path to player
     pathTimer: 0,          // Countdown until next path recalculation
@@ -397,6 +399,7 @@ function makeCat(colFrac, rowFrac, speedCells, id) {
       dr: randInt(-Config.GOAL_JITTER_RANGE, Config.GOAL_JITTER_RANGE),
     },
     noiseTimer: randRange(Config.NOISE_REFRESH_MIN, Config.NOISE_REFRESH_MAX),
+    lastCell: { c: -1, r: -1 },  // Track previous cell for crumb destruction
   };
 }
 
@@ -481,13 +484,13 @@ function startLevel(resetLevelNumber = false) {
   wishY = 0;
   wishTimer = 0;
 
-  const { cats: targetCats, speedFactor } = Config.getLevelConfig(level);
+  const { cats: targetCats, speedFactor, crumbSpeedFactor } = Config.getLevelConfig(level);
   const speedCells = Config.PLAYER_SPEED_CELLS * speedFactor;
 
   cats = [];
   for (let i = 0; i < targetCats; i++) {
     const p = Config.CAT_SPAWN_GRID[i % Config.CAT_SPAWN_GRID.length];
-    cats.push(makeCat(p[0], p[1], speedCells, i));
+    cats.push(makeCat(p[0], p[1], speedCells, crumbSpeedFactor, i));
   }
 
   overlay.style.display = 'none';
@@ -807,9 +810,12 @@ function update(dt) {
 
   // ── Cat AI ────────────────────────────────────────────────────────────
   // Each cat: updates jitter, recalculates path, applies separation steering,
-  // moves along path, eats crumbs, and checks for player collision.
+  // moves along path, destroys crumbs when exiting, and checks for player collision.
   for (let i = 0; i < cats.length; i++) {
     const cat = cats[i];
+
+    // Track cell before movement for crumb destruction
+    const prevCatCell = cellAt(cat.x, cat.y);
 
     // Goal jitter: random offset to prevent all cats targeting exact same point.
     cat.noiseTimer -= dt;
@@ -830,14 +836,15 @@ function update(dt) {
       cat.pathTimer = 1 / Config.A_STAR_RECALC_HZ;
     }
 
-    // Speed: cats slow down dramatically when in crumbs or about to enter one.
+    // Speed: cats slow down when in crumbs or about to enter one.
+    // If crumbSpeedFactor is 0, cats are blocked by crumbs entirely.
     const cs0 = cellAt(cat.x, cat.y);
-    let slow = isCrumb(cs0.c, cs0.r);
-    if (!slow && cat.path && cat.path.length) {
+    let inCrumb = isCrumb(cs0.c, cs0.r);
+    if (!inCrumb && cat.path && cat.path.length) {
       const nxt = cat.path[0];
-      slow = isCrumb(nxt.c, nxt.r);
+      inCrumb = isCrumb(nxt.c, nxt.r);
     }
-    let speedPx = cat.speedCells * Config.TILE * (slow ? Config.CAT_SPEED_IN_CRUMB : 1);
+    let speedPx = cat.speedCells * Config.TILE * (inCrumb ? cat.crumbSpeedFactor : 1);
 
     // Separation steering: push cats apart so they don't stack on top of each other.
     let sepX = 0, sepY = 0;
@@ -883,10 +890,13 @@ function update(dt) {
       cat.y += (dy / d) * step;
     }
 
-    // Crumb eating: cats gradually destroy crumbs they stand on.
-    const cs1 = cellAt(cat.x, cat.y);
-    if (isCrumb(cs1.c, cs1.r)) {
-      weakenCrumb(cs1.c, cs1.r, Config.CAT_EAT_RATE * dt);
+    // Crumb destruction: when cat exits a crumb cell, destroy it.
+    const curCatCell = cellAt(cat.x, cat.y);
+    if (curCatCell.c !== prevCatCell.c || curCatCell.r !== prevCatCell.r) {
+      // Cat changed cells - destroy crumb in the cell they left
+      if (isCrumb(prevCatCell.c, prevCatCell.r)) {
+        weakenCrumb(prevCatCell.c, prevCatCell.r, Infinity);
+      }
     }
 
     // Catch check: if cat overlaps player sufficiently, game over.
