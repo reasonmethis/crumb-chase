@@ -1,6 +1,10 @@
 /**
- * Game configuration and tunables.
- * All game constants in one place for easy tweaking.
+ * Crumb Chase - Game Configuration
+ *
+ * All game constants and tunables in one place.
+ * Modify these values to adjust game balance and behavior.
+ *
+ * @module config
  */
 
 // ============================================
@@ -53,7 +57,11 @@ export const PROB_BIASED_RING_DECAY = 0;  // Probability of targeting ring crumb
 
 export const TURN_EPS_FACTOR = 0.35;      // Turn tolerance as fraction of TILE
 
-// Computed value (derived from TILE)
+/**
+ * Get the turn tolerance in pixels.
+ * Player must be within this distance of cell center to turn.
+ * @returns {number} Turn tolerance in pixels
+ */
 export function getTurnEps() {
   return TILE * TURN_EPS_FACTOR;
 }
@@ -65,6 +73,10 @@ export function getTurnEps() {
 export const HOLE_COLUMN = 0;             // Hole is on the left edge
 export const HOLE_HALF_HEIGHT = 2;        // Hole spans 2*halfHeight+1 cells vertically
 
+/**
+ * Get the row where the hole is centered.
+ * @returns {number} Center row of the escape hole
+ */
 export function getHoleRow() {
   return Math.floor(ROWS * 0.5);
 }
@@ -89,6 +101,12 @@ export const LEVEL_CONFIG = [
 
 export const MAX_LEVEL = LEVEL_CONFIG.length - 1;
 
+/**
+ * Get configuration for a specific level.
+ * Clamps level to valid range [1, MAX_LEVEL].
+ * @param {number} level - Level number
+ * @returns {{cats: number, speedFactor: number}} Level configuration
+ */
 export function getLevelConfig(level) {
   const i = Math.max(1, Math.min(MAX_LEVEL, level));
   return LEVEL_CONFIG[i];
@@ -110,10 +128,20 @@ export const CAT_SPAWN_GRID = [
 // Player Spawn Position
 // ============================================
 
+/**
+ * Get player starting X position (pixels).
+ * Player spawns on the right side of the grid.
+ * @returns {number} X coordinate in pixels
+ */
 export function getPlayerSpawnX() {
   return (COLS - 5 + 0.5) * TILE;
 }
 
+/**
+ * Get player starting Y position (pixels).
+ * Player spawns vertically centered.
+ * @returns {number} Y coordinate in pixels
+ */
 export function getPlayerSpawnY() {
   return (ROWS * 0.5 + 0.5) * TILE;
 }

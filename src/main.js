@@ -1,12 +1,23 @@
 /**
- * Crumb Chase - Main Entry Point
- * This file bootstraps the game using ES modules.
+ * Crumb Chase - Main Game Module
+ *
+ * A chase game where a mouse tries to reach a hole while being pursued by cats.
+ * The mouse leaves a crumb trail that blocks its own movement but slows down cats.
+ *
+ * Game mechanics:
+ * - Player controls a mouse using arrow keys or WASD
+ * - Cats use A* pathfinding to chase the player
+ * - Crumbs act as walls for the player but only slow cats
+ * - Crumbs decay over time and cats can eat through them
+ * - Reaching the hole advances to the next level
+ *
+ * @module main
  */
 
 import * as Config from './config.js';
 
 // ============================================
-// Device Pixel Ratio
+// Device Pixel Ratio (for crisp rendering on HiDPI displays)
 // ============================================
 const DPR = Math.max(1, window.devicePixelRatio || 1);
 
@@ -36,17 +47,30 @@ ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
 // ============================================
 // Game State
 // ============================================
+
+/** Total number of cells in the grid */
 const N = Config.COLS * Config.ROWS;
+
+/**
+ * Crumb grid - stores thickness/strength of crumbs at each cell.
+ * Value > 0 means crumb exists; 0 means empty.
+ */
 const crumbs = new Float32Array(N);
+
+/** Set of cell indices that form the barrier ring around the hole */
 const ringSet = new Set();
+
+/** Set of cell indices that are part of the open hole (win zone) */
 const holeOpenSet = new Set();
 
+/** Hole position and dimensions */
 const hole = {
   c: Config.HOLE_COLUMN,
   r: Config.getHoleRow(),
   halfHeight: Config.HOLE_HALF_HEIGHT,
 };
 
+/** Player (mouse) state */
 const player = {
   x: Config.getPlayerSpawnX(),
   y: Config.getPlayerSpawnY(),
@@ -56,53 +80,124 @@ const player = {
   lastCell: { c: -1, r: -1 },
 };
 
+/** Array of cat objects */
 let cats = [];
+
+/** Current level number */
 let level = 1;
 
-// Movement state
+// ============================================
+// Movement State
+// ============================================
+
+/**
+ * Current committed movement direction.
+ * The player moves continuously in this direction until changed.
+ */
 let dirX = 0, dirY = 0;
+
+/**
+ * Desired/wished direction from player input.
+ * Gets committed to dirX/dirY when the player reaches a valid turn point.
+ */
 let wishX = 0, wishY = 0;
+
+/** Time elapsed since wish direction was set (for failsafe snap) */
 let wishTimer = 0;
 
+/** Currently pressed keys (for debug features like Shift to show paths) */
 const keys = Object.create(null);
+
+/** Whether the game is currently running (false when caught or between levels) */
 let running = true;
+
+/** Time survived in current level (seconds) */
 let timeAlive = 0;
+
+/** Accumulator for crumb decay timing */
 let decayAccum = 0;
 
-// Computed values
+/** Tolerance for committing turns at cell centers (in pixels) */
 const TURN_EPS = Config.getTurnEps();
 
 // ============================================
 // Utility Functions
 // ============================================
+
+/**
+ * Get a CSS custom property value from the document root.
+ * @param {string} name - CSS variable name (e.g., '--mouse')
+ * @returns {string} The trimmed property value
+ */
 function getCSS(name) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+/**
+ * Convert grid column/row to flat array index.
+ * @param {number} c - Column
+ * @param {number} r - Row
+ * @returns {number} Flat index into the crumbs array
+ */
 function idx(c, r) {
   return r * Config.COLS + c;
 }
 
+/**
+ * Check if a cell is within grid bounds.
+ * @param {number} c - Column
+ * @param {number} r - Row
+ * @returns {boolean} True if cell is valid
+ */
 function inBounds(c, r) {
   return c >= 0 && r >= 0 && c < Config.COLS && r < Config.ROWS;
 }
 
+/**
+ * Convert pixel coordinates to grid cell.
+ * @param {number} x - X pixel coordinate
+ * @param {number} y - Y pixel coordinate
+ * @returns {{c: number, r: number}} Cell column and row
+ */
 function cellAt(x, y) {
   return { c: Math.floor(x / Config.TILE), r: Math.floor(y / Config.TILE) };
 }
 
+/**
+ * Get the pixel coordinates of a cell's center.
+ * @param {number} c - Column
+ * @param {number} r - Row
+ * @returns {{x: number, y: number}} Center coordinates in pixels
+ */
 function centerOf(c, r) {
   return { x: (c + 0.5) * Config.TILE, y: (r + 0.5) * Config.TILE };
 }
 
+/**
+ * Generate a random integer in range [a, b] inclusive.
+ * @param {number} a - Minimum value
+ * @param {number} b - Maximum value
+ * @returns {number} Random integer
+ */
 function randInt(a, b) {
   return ((Math.random() * (b - a + 1)) | 0) + a;
 }
 
+/**
+ * Generate a random float in range [a, b).
+ * @param {number} a - Minimum value
+ * @param {number} b - Maximum value (exclusive)
+ * @returns {number} Random float
+ */
 function randRange(a, b) {
   return a + Math.random() * (b - a);
 }
 
+/**
+ * Pick a random element from a Set.
+ * @param {Set} set - The set to pick from
+ * @returns {*} A random element, or null if set is empty
+ */
 function randomFromSet(set) {
   const size = set.size;
   if (!size) return null;
@@ -117,6 +212,16 @@ function randomFromSet(set) {
 // ============================================
 // Turn Helpers
 // ============================================
+// These functions handle "Pac-Man style" turning where the player must be
+// near a cell center to change direction perpendicular to current movement.
+
+/**
+ * Find the nearest column center for snapping during a turn.
+ * Considers both current cell and next cell (if moving horizontally).
+ * @param {number} x - Current X position
+ * @param {number} movingDirX - Current horizontal movement direction (-1, 0, or 1)
+ * @returns {number} X coordinate of nearest column center
+ */
 function nearestColumnCenter(x, movingDirX) {
   const c = Math.floor(x / Config.TILE);
   const cx0 = (c + 0.5) * Config.TILE;
@@ -127,6 +232,13 @@ function nearestColumnCenter(x, movingDirX) {
   return cx0;
 }
 
+/**
+ * Check if player can commit a vertical turn (change to up/down movement).
+ * Player must be within TURN_EPS of a column center.
+ * @param {number} x - Current X position
+ * @param {number} movingDirX - Current horizontal movement direction
+ * @returns {boolean} True if turn is allowed
+ */
 function canTurnVertical(x, movingDirX) {
   const c = Math.floor(x / Config.TILE);
   const cx0 = (c + 0.5) * Config.TILE;
@@ -138,6 +250,12 @@ function canTurnVertical(x, movingDirX) {
   return false;
 }
 
+/**
+ * Find the nearest row center for snapping during a turn.
+ * @param {number} y - Current Y position
+ * @param {number} movingDirY - Current vertical movement direction (-1, 0, or 1)
+ * @returns {number} Y coordinate of nearest row center
+ */
 function nearestRowCenter(y, movingDirY) {
   const r = Math.floor(y / Config.TILE);
   const cy0 = (r + 0.5) * Config.TILE;
@@ -148,6 +266,13 @@ function nearestRowCenter(y, movingDirY) {
   return cy0;
 }
 
+/**
+ * Check if player can commit a horizontal turn (change to left/right movement).
+ * Player must be within TURN_EPS of a row center.
+ * @param {number} y - Current Y position
+ * @param {number} movingDirY - Current vertical movement direction
+ * @returns {boolean} True if turn is allowed
+ */
 function canTurnHorizontal(y, movingDirY) {
   const r = Math.floor(y / Config.TILE);
   const cy0 = (r + 0.5) * Config.TILE;
@@ -162,10 +287,23 @@ function canTurnHorizontal(y, movingDirY) {
 // ============================================
 // Crumb Functions
 // ============================================
+
+/**
+ * Check if a cell contains a crumb (or is out of bounds, which acts as a wall).
+ * @param {number} c - Column
+ * @param {number} r - Row
+ * @returns {boolean} True if cell has crumb or is out of bounds
+ */
 function isCrumb(c, r) {
   return inBounds(c, r) ? crumbs[idx(c, r)] > 0 : true;
 }
 
+/**
+ * Add or strengthen a crumb at a cell. Takes the max of existing and new strength.
+ * @param {number} c - Column
+ * @param {number} r - Row
+ * @param {number} strength - Crumb thickness to set
+ */
 function addCrumb(c, r, strength = Config.CRUMB_STRENGTH) {
   if (inBounds(c, r)) {
     const k = idx(c, r);
@@ -173,6 +311,12 @@ function addCrumb(c, r, strength = Config.CRUMB_STRENGTH) {
   }
 }
 
+/**
+ * Reduce crumb strength at a cell. Removes from ringSet if fully depleted.
+ * @param {number} c - Column
+ * @param {number} r - Row
+ * @param {number} amount - Amount to subtract from crumb strength
+ */
 function weakenCrumb(c, r, amount) {
   if (inBounds(c, r)) {
     const k = idx(c, r);
@@ -183,6 +327,11 @@ function weakenCrumb(c, r, amount) {
   }
 }
 
+/**
+ * Reduce crumb strength by flat array index.
+ * @param {number} k - Flat array index
+ * @param {number} amount - Amount to subtract
+ */
 function weakenCrumbByIndex(k, amount) {
   if (k >= 0 && k < N) {
     if (crumbs[k] > 0) {
@@ -192,6 +341,10 @@ function weakenCrumbByIndex(k, amount) {
   }
 }
 
+/**
+ * Count total number of cells with crumbs.
+ * @returns {number} Number of crumb cells
+ */
 function countCrumbs() {
   let count = 0;
   for (let i = 0; i < N; i++) {
@@ -203,6 +356,12 @@ function countCrumbs() {
 // ============================================
 // UI Functions
 // ============================================
+
+/**
+ * Show a temporary toast notification at the bottom of the screen.
+ * @param {string} msg - Message to display
+ * @param {number} ms - Duration in milliseconds (default 1200)
+ */
 function showToast(msg, ms = 1200) {
   toast.textContent = msg;
   toast.style.display = 'block';
@@ -212,6 +371,15 @@ function showToast(msg, ms = 1200) {
 // ============================================
 // Cat Factory
 // ============================================
+
+/**
+ * Create a new cat object at the specified position.
+ * @param {number} colFrac - X position as fraction of grid width (0-1)
+ * @param {number} rowFrac - Y position as fraction of grid height (0-1)
+ * @param {number} speedCells - Movement speed in cells per second
+ * @param {number} id - Unique cat identifier
+ * @returns {Object} Cat object with position, pathfinding state, etc.
+ */
 function makeCat(colFrac, rowFrac, speedCells, id) {
   const x = (Math.max(0, Math.min(Config.COLS - 1, Math.round(Config.COLS * colFrac))) + 0.5) * Config.TILE;
   const y = (Math.max(0, Math.min(Config.ROWS - 1, Math.round(Config.ROWS * rowFrac))) + 0.5) * Config.TILE;
@@ -222,9 +390,9 @@ function makeCat(colFrac, rowFrac, speedCells, id) {
     r: Config.TILE * Config.CAT_RADIUS_FACTOR,
     speedCells,
     color: getCSS('--cat'),
-    path: [],
-    pathTimer: 0,
-    goalJitter: {
+    path: [],              // Current A* path to player
+    pathTimer: 0,          // Countdown until next path recalculation
+    goalJitter: {          // Random offset added to goal to prevent cats stacking
       dc: randInt(-Config.GOAL_JITTER_RANGE, Config.GOAL_JITTER_RANGE),
       dr: randInt(-Config.GOAL_JITTER_RANGE, Config.GOAL_JITTER_RANGE),
     },
@@ -235,28 +403,37 @@ function makeCat(colFrac, rowFrac, speedCells, id) {
 // ============================================
 // Hole Barrier
 // ============================================
+
+/**
+ * Build the crumb barrier around the escape hole.
+ *
+ * The hole is on the left edge of the grid. This function:
+ * 1. Marks the open hole cells (where player can escape)
+ * 2. Surrounds the hole with crumbs to create a protective barrier
+ * 3. Adds extra caps above/below to prevent easy circumvention
+ */
 function buildHoleBarrier() {
   ringSet.clear();
   holeOpenSet.clear();
   const rmin = Math.max(0, hole.r - hole.halfHeight);
   const rmax = Math.min(Config.ROWS - 1, hole.r + hole.halfHeight);
 
-  // Mark open hole cells
+  // Mark open hole cells (the actual escape zone)
   for (let r = rmin; r <= rmax; r++) {
     holeOpenSet.add(idx(0, r));
   }
 
-  // Build barrier around hole
+  // Build rectangular barrier around hole opening
   for (let c = 0; c <= 2; c++) {
     for (let r = rmin - 1; r <= rmax + 1; r++) {
       if (!inBounds(c, r)) continue;
-      if (c === 0 && r >= rmin && r <= rmax) continue;
+      if (c === 0 && r >= rmin && r <= rmax) continue; // Leave hole open
       addCrumb(c, r, Config.RING_CRUMB_STRENGTH);
       ringSet.add(idx(c, r));
     }
   }
 
-  // Extra caps
+  // Add extra caps above and below to make it harder to slip around
   for (let c = 0; c <= 1; c++) {
     for (let r = rmin - 2; r <= rmin - 1; r++) {
       if (inBounds(c, r)) {
@@ -276,6 +453,15 @@ function buildHoleBarrier() {
 // ============================================
 // Level Management
 // ============================================
+
+/**
+ * Initialize or restart a game level.
+ *
+ * Resets all game state: clears crumbs, repositions player,
+ * spawns cats based on level config, and rebuilds the hole barrier.
+ *
+ * @param {boolean} resetLevelNumber - If true, resets to level 1; otherwise continues to next level
+ */
 function startLevel(resetLevelNumber = false) {
   if (resetLevelNumber) {
     level = 1;
@@ -318,10 +504,34 @@ function startLevel(resetLevelNumber = false) {
 // ============================================
 // A* Pathfinding
 // ============================================
+// Standard A* algorithm for cat navigation.
+// Crumb cells have higher traversal cost (CRUMB_COST_FOR_CAT) so cats prefer
+// open paths but will push through crumbs if necessary.
+
+/**
+ * Manhattan distance heuristic for A*.
+ * @param {number} c1 - Start column
+ * @param {number} r1 - Start row
+ * @param {number} c2 - Goal column
+ * @param {number} r2 - Goal row
+ * @returns {number} Manhattan distance
+ */
 function heuristic(c1, r1, c2, r2) {
   return Math.abs(c1 - c2) + Math.abs(r1 - r2);
 }
 
+/**
+ * A* pathfinding from start cell to goal cell.
+ *
+ * Uses typed arrays for performance. Crumb cells cost more to traverse,
+ * making cats prefer open paths but still able to eat through barriers.
+ *
+ * @param {number} startC - Starting column
+ * @param {number} startR - Starting row
+ * @param {number} goalC - Goal column
+ * @param {number} goalR - Goal row
+ * @returns {Array<{c: number, r: number}>} Path as array of cells (empty if no path)
+ */
 function aStar(startC, startR, goalC, goalR) {
   const start = idx(startC, startR);
   const goal = idx(goalC, goalR);
@@ -399,6 +609,18 @@ function aStar(startC, startR, goalC, goalR) {
 // ============================================
 // Movement
 // ============================================
+
+/**
+ * Move an agent (player or cat) by the given delta.
+ *
+ * Handles collision with grid boundaries and optionally with crumbs.
+ * When blocked, snaps agent to cell center to prevent getting stuck.
+ *
+ * @param {Object} agent - Entity with x, y position properties
+ * @param {number} dx - Horizontal movement delta (pixels)
+ * @param {number} dy - Vertical movement delta (pixels)
+ * @param {boolean} blockCrumb - If true, crumbs act as walls (used for player)
+ */
 function moveAgent(agent, dx, dy, blockCrumb) {
   const EPS = 1e-6;
 
@@ -447,10 +669,22 @@ function moveAgent(agent, dx, dy, blockCrumb) {
   }
 }
 
+/**
+ * Check if a cell is part of the escape hole.
+ * @param {number} c - Column
+ * @param {number} r - Row
+ * @returns {boolean} True if cell is in the hole opening
+ */
 function isHoleCell(c, r) {
   return c === 0 && holeOpenSet.has(idx(c, r));
 }
 
+/**
+ * Decay a random crumb on the grid.
+ *
+ * With PROB_BIASED_RING_DECAY probability, targets the protective ring
+ * around the hole. Otherwise picks a random cell.
+ */
 function decayOneCrumb() {
   let removed = false;
   if (ringSet.size && Math.random() < Config.PROB_BIASED_RING_DECAY) {
@@ -470,10 +704,28 @@ function decayOneCrumb() {
 // ============================================
 // Game Update
 // ============================================
+
+/**
+ * Main game update tick - called every frame.
+ *
+ * This is the heart of the game logic. It processes:
+ * 1. Turn wishes - commits player direction changes when at valid turn points
+ * 2. Player movement - moves player and snaps to grid alignment
+ * 3. Crumb trail - leaves crumbs behind the player
+ * 4. Win condition - checks if player reached the hole
+ * 5. Cat AI - updates pathfinding, separation steering, and movement
+ * 6. Collision - checks if any cat caught the player
+ * 7. Crumb decay - gradually removes crumbs over time
+ * 8. HUD - updates stats display
+ *
+ * @param {number} dt - Delta time in seconds since last frame
+ */
 function update(dt) {
   timeAlive += dt;
 
-  // Handle turn wishes
+  // ── Turn Wishes ──────────────────────────────────────────────────────
+  // Player input sets wishX/wishY. We only commit to dirX/dirY when the
+  // player is near a cell center (Pac-Man style turning).
   if (wishX !== dirX || wishY !== dirY) wishTimer += dt;
   else wishTimer = 0;
 
@@ -515,11 +767,12 @@ function update(dt) {
     }
   }
 
-  // Player movement
+  // ── Player Movement ───────────────────────────────────────────────────
+  // Move in committed direction, blocked by crumbs (blockCrumb=true).
   const prevCell = cellAt(player.x, player.y);
   moveAgent(player, dirX * player.speed * dt, dirY * player.speed * dt, true);
 
-  // Snap to center when stopped
+  // Snap perpendicular axis to cell center for clean grid-aligned movement.
   if (dirX === 0 && dirY === 0) {
     const cc = cellAt(player.x, player.y);
     player.x = (cc.c + 0.5) * Config.TILE;
@@ -535,7 +788,9 @@ function update(dt) {
     player.y = (cc.r + 0.5) * Config.TILE;
   }
 
-  // Leave crumb trail
+  // ── Crumb Trail ───────────────────────────────────────────────────────
+  // When player enters a new cell, leave a crumb in the previous cell.
+  // Don't leave crumbs in the hole area.
   const curCell = cellAt(player.x, player.y);
   if ((curCell.c !== prevCell.c || curCell.r !== prevCell.r) && inBounds(prevCell.c, prevCell.r)) {
     if (!isHoleCell(prevCell.c, prevCell.r)) {
@@ -543,18 +798,20 @@ function update(dt) {
     }
   }
 
-  // Win check
+  // ── Win Condition ────────────────────────────────────────────────────
   if (isHoleCell(curCell.c, curCell.r)) {
     level += 1;
     startLevel(false);
     return;
   }
 
-  // Update cats
+  // ── Cat AI ────────────────────────────────────────────────────────────
+  // Each cat: updates jitter, recalculates path, applies separation steering,
+  // moves along path, eats crumbs, and checks for player collision.
   for (let i = 0; i < cats.length; i++) {
     const cat = cats[i];
 
-    // Update goal jitter
+    // Goal jitter: random offset to prevent all cats targeting exact same point.
     cat.noiseTimer -= dt;
     if (cat.noiseTimer <= 0) {
       cat.goalJitter.dc = randInt(-Config.GOAL_JITTER_RANGE, Config.GOAL_JITTER_RANGE);
@@ -562,7 +819,7 @@ function update(dt) {
       cat.noiseTimer = randRange(Config.NOISE_REFRESH_MIN, Config.NOISE_REFRESH_MAX);
     }
 
-    // Recalculate path
+    // Pathfinding: periodically recalculate A* path to player (with jitter offset).
     cat.pathTimer -= dt;
     if (cat.pathTimer <= 0) {
       const ps = cellAt(player.x, player.y);
@@ -573,7 +830,7 @@ function update(dt) {
       cat.pathTimer = 1 / Config.A_STAR_RECALC_HZ;
     }
 
-    // Calculate speed
+    // Speed: cats slow down dramatically when in crumbs or about to enter one.
     const cs0 = cellAt(cat.x, cat.y);
     let slow = isCrumb(cs0.c, cs0.r);
     if (!slow && cat.path && cat.path.length) {
@@ -582,7 +839,7 @@ function update(dt) {
     }
     let speedPx = cat.speedCells * Config.TILE * (slow ? Config.CAT_SPEED_IN_CRUMB : 1);
 
-    // Separation steering
+    // Separation steering: push cats apart so they don't stack on top of each other.
     let sepX = 0, sepY = 0;
     for (let j = 0; j < cats.length; j++) {
       if (i === j) continue;
@@ -603,7 +860,7 @@ function update(dt) {
       cat.y += (sepY / sl) * Config.SEPARATION_FORCE * dt;
     }
 
-    // Follow path
+    // Path following: move toward next waypoint, pop when reached.
     if (cat.path && cat.path.length) {
       const next = cat.path[0];
       const target = centerOf(next.c, next.r);
@@ -617,7 +874,7 @@ function update(dt) {
         cat.path.shift();
       }
     } else {
-      // Direct chase fallback
+      // Fallback: if no path, chase player directly with slight randomness.
       const dx = player.x + randRange(-0.2, 0.2) * Config.TILE - cat.x;
       const dy = player.y + randRange(-0.2, 0.2) * Config.TILE - cat.y;
       const d = Math.hypot(dx, dy) || 1;
@@ -626,13 +883,13 @@ function update(dt) {
       cat.y += (dy / d) * step;
     }
 
-    // Eat crumbs
+    // Crumb eating: cats gradually destroy crumbs they stand on.
     const cs1 = cellAt(cat.x, cat.y);
     if (isCrumb(cs1.c, cs1.r)) {
       weakenCrumb(cs1.c, cs1.r, Config.CAT_EAT_RATE * dt);
     }
 
-    // Catch check
+    // Catch check: if cat overlaps player sufficiently, game over.
     const dist = Math.hypot(cat.x - player.x, cat.y - player.y);
     if (dist < (cat.r + player.r) * Config.CATCH_MARGIN) {
       running = false;
@@ -643,14 +900,15 @@ function update(dt) {
     }
   }
 
-  // Crumb decay
+  // ── Crumb Decay ───────────────────────────────────────────────────────
+  // Gradually remove crumbs over time so maze doesn't become permanent.
   decayAccum += dt * Config.CRUMB_DECAY_PER_SEC;
   while (decayAccum >= 1) {
     decayAccum -= 1;
     decayOneCrumb();
   }
 
-  // Update HUD
+  // ── HUD Update ───────────────────────────────────────────────────────
   if (((timeAlive * 10) | 0) % 2 === 0) {
     const crumbCount = countCrumbs();
     const sp = cats.length ? cats[0].speedCells : 0;
@@ -661,6 +919,14 @@ function update(dt) {
 // ============================================
 // Rendering
 // ============================================
+// All drawing functions. The game uses canvas 2D with HiDPI scaling.
+
+/**
+ * Lighten or darken a color.
+ * @param {string} hexOrCSS - Input color (hex, rgb, or CSS variable value)
+ * @param {number} amt - Amount to adjust: negative = darken, positive = lighten
+ * @returns {string} RGB color string
+ */
 function shade(hexOrCSS, amt) {
   const tmp = document.createElement('canvas').getContext('2d');
   tmp.fillStyle = hexOrCSS;
@@ -672,6 +938,9 @@ function shade(hexOrCSS, amt) {
   return `rgb(${(nr * 255) | 0}, ${(ng * 255) | 0}, ${(nb * 255) | 0})`;
 }
 
+/**
+ * Draw the background grid with subtle lines and vignette effect.
+ */
 function drawBackgroundGrid() {
   const w = Config.COLS * Config.TILE;
   const h = Config.ROWS * Config.TILE;
@@ -703,6 +972,9 @@ function drawBackgroundGrid() {
   ctx.restore();
 }
 
+/**
+ * Draw all crumbs on the grid as small colored squares.
+ */
 function drawCrumbs() {
   ctx.save();
   const crumbColor = getCSS('--crumb');
@@ -723,6 +995,9 @@ function drawCrumbs() {
   ctx.restore();
 }
 
+/**
+ * Draw the escape hole on the left edge of the grid.
+ */
 function drawHole() {
   const rmin = Math.max(0, hole.r - hole.halfHeight);
   const rmax = Math.min(Config.ROWS - 1, hole.r + hole.halfHeight);
@@ -742,6 +1017,13 @@ function drawHole() {
   ctx.restore();
 }
 
+/**
+ * Draw the mouse character (player) with ears, eyes, nose, and whiskers.
+ * @param {number} x - Center X position
+ * @param {number} y - Center Y position
+ * @param {number} r - Radius
+ * @param {string} color - Fill color
+ */
 function drawMouseHead(x, y, r, color) {
   ctx.save();
   ctx.fillStyle = color;
@@ -796,6 +1078,13 @@ function drawMouseHead(x, y, r, color) {
   ctx.restore();
 }
 
+/**
+ * Draw a cat character with triangular ears, slit eyes, nose, and whiskers.
+ * @param {number} x - Center X position
+ * @param {number} y - Center Y position
+ * @param {number} r - Radius
+ * @param {string} color - Fill color
+ */
 function drawCatHead(x, y, r, color) {
   ctx.save();
   ctx.fillStyle = color;
@@ -854,6 +1143,11 @@ function drawCatHead(x, y, r, color) {
   ctx.restore();
 }
 
+/**
+ * Draw a debug path visualization (dashed line through cells).
+ * Shown when holding Shift key.
+ * @param {Array<{c: number, r: number}>} cells - Path waypoints
+ */
 function drawPath(cells) {
   if (!cells || !cells.length) return;
   ctx.save();
@@ -876,6 +1170,10 @@ function drawPath(cells) {
   ctx.restore();
 }
 
+/**
+ * Main render function - draws entire game scene.
+ * Called every frame after update().
+ */
 function draw() {
   ctx.clearRect(0, 0, canvas.width / DPR, canvas.height / DPR);
   drawBackgroundGrid();
@@ -893,6 +1191,12 @@ function draw() {
 // ============================================
 // Input Handling
 // ============================================
+// Supports arrow keys, WASD, Space to stop, R to restart, and click/tap.
+
+/**
+ * Set desired direction based on key press.
+ * @param {string} key - Key name (e.g., 'ArrowLeft', 'a')
+ */
 function setDirectionFromKey(key) {
   if (key === 'ArrowLeft' || key === 'a' || key === 'A') {
     wishX = -1;
@@ -954,8 +1258,15 @@ playAgain.addEventListener('click', () => startLevel(true));
 // ============================================
 // Game Loop
 // ============================================
+
+/** Timestamp of previous frame for delta time calculation */
 let lastTime = performance.now();
 
+/**
+ * Main game loop - called every frame via requestAnimationFrame.
+ * Calculates delta time, updates game state, and renders.
+ * @param {number} ts - Timestamp in milliseconds
+ */
 function loop(ts) {
   const dt = Math.min(0.05, (ts - lastTime) / 1000);
   lastTime = ts;
