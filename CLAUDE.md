@@ -1,5 +1,37 @@
 # Claude Code Guidelines
 
+## Architecture
+
+```
+src/
+├── main.js      # Entry point, input handling, game loop
+├── game.js      # Game orchestrator, A* pathfinding, ML interface
+├── player.js    # Player class (position, movement, Pac-Man turns)
+├── cat.js       # Cat class (AI behavior, path following, separation)
+├── grid.js      # Grid class (crumbs, hole, barrier management)
+├── renderer.js  # Renderer class (HiDPI canvas drawing)
+├── config.js    # All game constants and level configs
+└── core.js      # Pure utility functions (shared, testable)
+```
+
+**Key interfaces in Game class:**
+- `reset(level)` - Start/restart game
+- `update(dt)` - Main game tick
+- `step(action)` - ML interface: execute action, return {state, reward, done}
+- `getState()` - ML interface: get normalized observation vector
+
+## Development
+
+```bash
+# Run tests
+node tests/test-core.js
+
+# Serve locally
+npx serve
+# or
+python -m http.server 8000
+```
+
 ## Git Commit Messages
 
 - Follow the Conventional Commits specification
