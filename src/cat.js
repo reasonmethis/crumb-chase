@@ -61,9 +61,6 @@ export class Cat {
       dr: randInt(-Config.GOAL_JITTER_RANGE, Config.GOAL_JITTER_RANGE),
     };
 
-    /** Timer for refreshing goal jitter */
-    this.noiseTimer = randRange(Config.NOISE_REFRESH_MIN, Config.NOISE_REFRESH_MAX);
-
     /** Previous cell position (for detecting cell changes) */
     this.lastCell = { c: -1, r: -1 };
   }
@@ -106,20 +103,7 @@ export class Cat {
   }
 
   /**
-   * Update goal jitter periodically.
-   * @param {number} dt - Delta time in seconds
-   */
-  updateJitter(dt) {
-    this.noiseTimer -= dt;
-    if (this.noiseTimer <= 0) {
-      this.goalJitter.dc = randInt(-Config.GOAL_JITTER_RANGE, Config.GOAL_JITTER_RANGE);
-      this.goalJitter.dr = randInt(-Config.GOAL_JITTER_RANGE, Config.GOAL_JITTER_RANGE);
-      this.noiseTimer = randRange(Config.NOISE_REFRESH_MIN, Config.NOISE_REFRESH_MAX);
-    }
-  }
-
-  /**
-   * Check if it's time to recalculate path and update timer.
+   * Check if it's time to recalculate path. Also refreshes goal jitter.
    * @param {number} dt - Delta time in seconds
    * @returns {boolean} True if path should be recalculated
    */
@@ -127,6 +111,9 @@ export class Cat {
     this.pathTimer -= dt;
     if (this.pathTimer <= 0) {
       this.pathTimer = 1 / Config.A_STAR_RECALC_HZ;
+      // Refresh jitter when recalculating path
+      this.goalJitter.dc = randInt(-Config.GOAL_JITTER_RANGE, Config.GOAL_JITTER_RANGE);
+      this.goalJitter.dr = randInt(-Config.GOAL_JITTER_RANGE, Config.GOAL_JITTER_RANGE);
       return true;
     }
     return false;

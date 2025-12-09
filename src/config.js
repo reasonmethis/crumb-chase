@@ -34,8 +34,6 @@ export const CRUMB_COST_FOR_CAT = 14;     // A* cost for crumb tiles (vs 1 for o
 
 // Cat divergence (prevent stacking)
 export const GOAL_JITTER_RANGE = 1;       // Random offset added to cat goal (±cells)
-export const NOISE_REFRESH_MIN = 0.8;     // Min time between jitter updates (seconds)
-export const NOISE_REFRESH_MAX = 1.6;     // Max time between jitter updates (seconds)
 export const SEPARATION_RADIUS_CELLS = 3.0; // Separation steering radius (cells)
 export const SEPARATION_FORCE = 40;       // Separation steering strength (px/sec)
 

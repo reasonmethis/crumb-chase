@@ -310,10 +310,7 @@ export class Game {
       // Track cell before movement
       const prevCatCell = cat.getCell();
 
-      // Update jitter
-      cat.updateJitter(dt);
-
-      // Pathfinding
+      // Pathfinding (also refreshes goal jitter)
       if (cat.shouldRecalculatePath(dt)) {
         const goal = cat.getGoalCell(playerCell);
         const catCell = cat.getCell();
