@@ -415,47 +415,75 @@ function moveWithCollision(x, y, dx, dy, tileSize, cols, rows, isCrumbBlocking) 
 // Exports
 // ============================================
 
-// Support both Node.js (CommonJS) and browser (ES modules)
+// ES module exports (for browser)
+export {
+  // Grid utilities
+  idx,
+  inBounds,
+  cellAt,
+  centerOf,
+
+  // Turn helpers
+  nearestColumnCenter,
+  canTurnVertical,
+  nearestRowCenter,
+  canTurnHorizontal,
+
+  // Random utilities
+  randInt,
+  randRange,
+  randomFromSet,
+
+  // Pathfinding
+  heuristic,
+  aStar,
+
+  // Crumb management
+  createCrumbGrid,
+  hasCrumb,
+  addCrumb,
+  removeCrumb,
+  weakenCrumb,
+  countCrumbs,
+
+  // Collision
+  circlesOverlap,
+  distance,
+
+  // Level config
+  LEVEL_CONFIG,
+  getLevelConfig,
+
+  // Movement
+  moveWithCollision,
+};
+
+// CommonJS exports (for Node.js tests)
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = {
-    // Grid utilities
     idx,
     inBounds,
     cellAt,
     centerOf,
-
-    // Turn helpers
     nearestColumnCenter,
     canTurnVertical,
     nearestRowCenter,
     canTurnHorizontal,
-
-    // Random utilities
     randInt,
     randRange,
     randomFromSet,
-
-    // Pathfinding
     heuristic,
     aStar,
-
-    // Crumb management
     createCrumbGrid,
     hasCrumb,
     addCrumb,
     removeCrumb,
     weakenCrumb,
     countCrumbs,
-
-    // Collision
     circlesOverlap,
     distance,
-
-    // Level config
     LEVEL_CONFIG,
     getLevelConfig,
-
-    // Movement
     moveWithCollision,
   };
 }
