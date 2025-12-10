@@ -25,22 +25,22 @@ export class QLearningAgent {
    * @param {number} options.bins - Number of bins for discretization (default 10)
    */
   constructor(options = {}) {
-    /** Learning rate (alpha) */
-    this.lr = options.learningRate ?? 0.1;
+    /** Learning rate (alpha) - higher for faster learning */
+    this.lr = options.learningRate ?? 0.2;
 
-    /** Discount factor (gamma) */
-    this.gamma = options.discount ?? 0.95;
+    /** Discount factor (gamma) - value future rewards */
+    this.gamma = options.discount ?? 0.9;
 
     /** Exploration rate (epsilon) */
     this.epsilon = options.epsilon ?? 1.0;
 
-    /** Epsilon decay multiplier per episode */
-    this.epsilonDecay = options.epsilonDecay ?? 0.995;
+    /** Epsilon decay multiplier per episode - slower decay for more exploration */
+    this.epsilonDecay = options.epsilonDecay ?? 0.998;
 
-    /** Minimum exploration rate */
-    this.epsilonMin = options.epsilonMin ?? 0.01;
+    /** Minimum exploration rate - keep some exploration */
+    this.epsilonMin = options.epsilonMin ?? 0.05;
 
-    /** Number of bins for discretization */
+    /** Number of bins for discretization (not used in simplified state) */
     this.bins = options.bins ?? 10;
 
     /** Number of actions (left, right, up, down, stop) */
@@ -84,31 +84,53 @@ export class QLearningAgent {
   }
 
   /**
+   * Convert direction (dx, dy) to octant (0-7).
+   * @param {number} dx - X direction
+   * @param {number} dy - Y direction
+   * @returns {number} Octant index (0-7)
+   */
+  dirToOctant(dx, dy) {
+    // Calculate angle and map to 8 directions
+    const angle = Math.atan2(dy, dx);
+    // Shift by pi/8 so octant 0 is centered on "right"
+    const octant = Math.round((angle + Math.PI) / (Math.PI / 4)) % 8;
+    return octant;
+  }
+
+  /**
+   * Convert distance to danger level.
+   * @param {number} dist - Normalized distance (0-1)
+   * @returns {number} Danger level (0=danger, 1=caution, 2=safe)
+   */
+  distToDanger(dist) {
+    if (dist < 0.08) return 0;  // Danger: cat very close
+    if (dist < 0.2) return 1;   // Caution: cat nearby
+    return 2;                   // Safe: cat far away
+  }
+
+  /**
    * Convert game state object to discretized state string.
+   * Uses a simplified state space for tractable learning.
    * @param {Object} state - State from game.getState()
    * @returns {string} Discretized state key
    */
   stateToKey(state) {
-    // Discretize key features
-    const features = [
-      this.discretize(state.playerX),
-      this.discretize(state.playerY),
-      this.discretizeSigned(state.dirToHoleX),
-      this.discretizeSigned(state.dirToHoleY),
-      this.discretize(state.distToHole),
-      this.discretize(state.distToCat),
-      this.discretizeSigned(state.dirToCatX),
-      this.discretizeSigned(state.dirToCatY),
-      state.crumbUp,
-      state.crumbDown,
-      state.crumbLeft,
-      state.crumbRight,
-      // Discretize movement direction: -1, 0, 1 -> 0, 1, 2
-      state.movingX + 1,
-      state.movingY + 1,
-    ];
+    // Simplified features for tractable state space:
+    // 1. Direction to hole (8 octants)
+    const holeDir = this.dirToOctant(state.dirToHoleX, state.dirToHoleY);
 
-    return features.join(',');
+    // 2. Cat danger level (3 levels)
+    const catDanger = this.distToDanger(state.distToCat);
+
+    // 3. Cat direction (8 octants, only matters if cat is close)
+    const catDir = catDanger < 2 ? this.dirToOctant(state.dirToCatX, state.dirToCatY) : 0;
+
+    // 4. Adjacent crumbs encoded as 4-bit number (0-15)
+    const crumbMask = (state.crumbUp << 3) | (state.crumbDown << 2) |
+                      (state.crumbLeft << 1) | state.crumbRight;
+
+    // Total: 8 × 3 × 8 × 16 = 3,072 possible states (very manageable!)
+    return `${holeDir},${catDanger},${catDir},${crumbMask}`;
   }
 
   /**

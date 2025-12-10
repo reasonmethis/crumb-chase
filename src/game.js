@@ -464,14 +464,24 @@ export class Game {
     } else if (result.levelComplete) {
       reward = 100;
     } else {
-      // Progress reward
-      reward += (prevDistToHole - newDistToHole) * 10;
-      // Survival bonus
-      reward += 0.1;
-      // Danger penalty
+      // Progress reward: stronger signal for moving toward hole
+      const progress = prevDistToHole - newDistToHole;
+      reward += progress * 50;
+
+      // Small survival bonus
+      reward += 0.05;
+
+      // Danger penalty: proportional to proximity (closer = worse)
       const minCatDist = this._minDistanceToCat();
-      if (minCatDist < Config.TILE * 3) {
-        reward -= 1;
+      const dangerRadius = Config.TILE * 5;
+      if (minCatDist < dangerRadius) {
+        // Scale from 0 (at edge) to -2 (very close)
+        reward -= 2 * (1 - minCatDist / dangerRadius);
+      }
+
+      // Small penalty for stopping (encourage movement)
+      if (this.player.dirX === 0 && this.player.dirY === 0) {
+        reward -= 0.1;
       }
     }
 
