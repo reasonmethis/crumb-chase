@@ -109,6 +109,19 @@ export class QLearningAgent {
   }
 
   /**
+   * Check if cat is blocking the direct path to hole.
+   * @param {Object} state - Game state
+   * @returns {number} 0=clear, 1=cat is roughly between player and hole
+   */
+  isCatBlocking(state) {
+    // Cat is "blocking" if it's closer to the hole than we are
+    // and roughly in our direction to the hole
+    const dotProduct = state.dirToHoleX * state.dirToCatX + state.dirToHoleY * state.dirToCatY;
+    // If dot product > 0.5, cat is roughly in the direction of the hole
+    return (dotProduct > 0.3 && state.distToCat < state.distToHole * 1.5) ? 1 : 0;
+  }
+
+  /**
    * Convert game state object to discretized state string.
    * Uses a simplified state space for tractable learning.
    * @param {Object} state - State from game.getState()
@@ -125,12 +138,15 @@ export class QLearningAgent {
     // 3. Cat direction (8 octants, only matters if cat is close)
     const catDir = catDanger < 2 ? this.dirToOctant(state.dirToCatX, state.dirToCatY) : 0;
 
-    // 4. Adjacent crumbs encoded as 4-bit number (0-15)
+    // 4. Is cat blocking path to hole? (2 values)
+    const blocking = this.isCatBlocking(state);
+
+    // 5. Adjacent crumbs encoded as 4-bit number (0-15)
     const crumbMask = (state.crumbUp << 3) | (state.crumbDown << 2) |
                       (state.crumbLeft << 1) | state.crumbRight;
 
-    // Total: 8 × 3 × 8 × 16 = 3,072 possible states (very manageable!)
-    return `${holeDir},${catDanger},${catDir},${crumbMask}`;
+    // Total: 8 × 3 × 8 × 2 × 16 = 6,144 possible states (still manageable)
+    return `${holeDir},${catDanger},${catDir},${blocking},${crumbMask}`;
   }
 
   /**

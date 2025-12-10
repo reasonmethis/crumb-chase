@@ -37,10 +37,11 @@ const cellAt = (x, y) => coreCellAt(x, y, Config.TILE);
 export class Game {
   /**
    * Create a new game instance.
-   * @param {HTMLCanvasElement} canvas - Canvas element for rendering
+   * @param {HTMLCanvasElement|null} canvas - Canvas element for rendering (null for headless)
    * @param {Object} options - Game options
    * @param {Function} options.onCaught - Callback when player is caught
    * @param {Function} options.onLevelComplete - Callback when level is completed
+   * @param {boolean} options.headless - If true, skip renderer creation
    */
   constructor(canvas, options = {}) {
     /** Grid instance - manages crumbs and hole */
@@ -49,8 +50,8 @@ export class Game {
     /** Player instance - manages mouse position and movement */
     this.player = new Player();
 
-    /** Renderer instance - handles all drawing */
-    this.renderer = new Renderer(canvas);
+    /** Renderer instance - handles all drawing (null in headless mode) */
+    this.renderer = (canvas && !options.headless) ? new Renderer(canvas) : null;
 
     /** Array of cat instances */
     this.cats = [];
@@ -84,6 +85,14 @@ export class Game {
    * @returns {string} Property value
    */
   getCSS(name) {
+    // In headless mode, return default colors
+    if (!this.renderer) {
+      const defaults = {
+        '--mouse': '#b8c0cc',
+        '--cat': '#ff69b4',
+      };
+      return defaults[name] || '#ffffff';
+    }
     return this.renderer.getCSS(name);
   }
 
@@ -357,6 +366,7 @@ export class Game {
    * @param {boolean} showPath - Whether to show debug path visualization
    */
   draw(showPath = false) {
+    if (!this.renderer) return; // Skip in headless mode
     this.renderer.draw({
       grid: this.grid,
       player: this.player,
