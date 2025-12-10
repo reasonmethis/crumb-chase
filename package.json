@@ -1,0 +1,14 @@
+{
+  "name": "crumb-chase",
+  "version": "1.0.0",
+  "description": "A mouse vs cat game with Q-learning AI demo",
+  "type": "module",
+  "scripts": {
+    "start": "npx serve",
+    "test": "node tests/test-core.js",
+    "train": "node scripts/train-headless.js"
+  },
+  "keywords": ["game", "ml", "q-learning", "reinforcement-learning"],
+  "author": "Dmitriy Vasilyuk",
+  "license": "MIT"
+}

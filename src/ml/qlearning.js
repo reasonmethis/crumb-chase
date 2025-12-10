@@ -109,6 +109,31 @@ export class QLearningAgent {
   }
 
   /**
+   * Convert player movement direction to index.
+   * @param {number} dx - X direction (-1, 0, 1)
+   * @param {number} dy - Y direction (-1, 0, 1)
+   * @returns {number} Direction index (0=stopped, 1=left, 2=right, 3=up, 4=down)
+   */
+  moveDirToIndex(dx, dy) {
+    if (dx === 0 && dy === 0) return 0;  // Stopped
+    if (dx < 0) return 1;  // Left
+    if (dx > 0) return 2;  // Right
+    if (dy < 0) return 3;  // Up
+    return 4;              // Down
+  }
+
+  /**
+   * Convert distance to hole to proximity level.
+   * @param {number} dist - Normalized distance to hole (0-1)
+   * @returns {number} Proximity (0=close, 1=medium, 2=far)
+   */
+  distToHoleProximity(dist) {
+    if (dist < 0.15) return 0;  // Close - almost there!
+    if (dist < 0.4) return 1;   // Medium
+    return 2;                   // Far
+  }
+
+  /**
    * Check if cat is blocking the direct path to hole.
    * @param {Object} state - Game state
    * @returns {number} 0=clear, 1=cat is roughly between player and hole
@@ -128,25 +153,35 @@ export class QLearningAgent {
    * @returns {string} Discretized state key
    */
   stateToKey(state) {
-    // Simplified features for tractable state space:
+    // Features for tractable state space:
     // 1. Direction to hole (8 octants)
     const holeDir = this.dirToOctant(state.dirToHoleX, state.dirToHoleY);
 
-    // 2. Cat danger level (3 levels)
+    // 2. Distance to hole (3 levels: close/medium/far)
+    const holeDist = this.distToHoleProximity(state.distToHole);
+
+    // 3. Cat danger level (3 levels)
     const catDanger = this.distToDanger(state.distToCat);
 
-    // 3. Cat direction (8 octants, only matters if cat is close)
-    const catDir = catDanger < 2 ? this.dirToOctant(state.dirToCatX, state.dirToCatY) : 0;
+    // 4. Cat direction (4 cardinal directions, only when cat is close)
+    //    Simplified from 8 octants to reduce state space
+    let catDir = 0;
+    if (catDanger < 2) {
+      // Map to 4 directions: 0=right/down-right, 1=down/down-left, 2=left/up-left, 3=up/up-right
+      const octant = this.dirToOctant(state.dirToCatX, state.dirToCatY);
+      catDir = Math.floor(octant / 2);
+    }
 
-    // 4. Is cat blocking path to hole? (2 values)
+    // 5. Is cat blocking path to hole? (2 values)
     const blocking = this.isCatBlocking(state);
 
-    // 5. Adjacent crumbs encoded as 4-bit number (0-15)
+    // 6. Adjacent crumbs encoded as 4-bit number (0-15)
+    //    CRITICAL: On level 1, crumbs are WALLS for cats!
     const crumbMask = (state.crumbUp << 3) | (state.crumbDown << 2) |
                       (state.crumbLeft << 1) | state.crumbRight;
 
-    // Total: 8 × 3 × 8 × 2 × 16 = 6,144 possible states (still manageable)
-    return `${holeDir},${catDanger},${catDir},${blocking},${crumbMask}`;
+    // Total: 8 × 3 × 3 × 4 × 2 × 16 = 9,216 possible states
+    return `${holeDir},${holeDist},${catDanger},${catDir},${blocking},${crumbMask}`;
   }
 
   /**
