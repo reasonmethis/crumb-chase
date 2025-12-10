@@ -25,6 +25,23 @@
           <span id="stats"></span>
           <button class="btn" id="resetBtn">Restart</button>
         </div>
+        <div class="row ml-controls">
+          <button class="btn btn-mode active" id="btnHuman">Human</button>
+          <button class="btn btn-mode" id="btnAI">AI Play</button>
+          <button class="btn btn-mode" id="btnTrain">Train</button>
+          <span class="separator">|</span>
+          <button class="btn btn-speed active" data-speed="1">1x</button>
+          <button class="btn btn-speed" data-speed="2">2x</button>
+          <button class="btn btn-speed" data-speed="5">5x</button>
+          <button class="btn btn-speed" data-speed="10">10x</button>
+          <span class="separator">|</span>
+          <button class="btn" id="btnSave">Save</button>
+          <button class="btn" id="btnLoad">Load</button>
+          <button class="btn" id="btnResetAI">Reset AI</button>
+        </div>
+        <div class="row" id="mlStats" style="display: none;">
+          <span id="mlStatsText">Episodes: 0 | Avg: 0 | Best: 0 | Epsilon: 1.00 | Q-States: 0</span>
+        </div>
         <div class="row">
           <span>
             Controls: Tap <code>Arrows</code> or click to steer.

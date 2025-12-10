@@ -108,6 +108,27 @@ canvas {
   transform: translateY(1px);
 }
 
+.btn.active {
+  background: var(--accent);
+  color: #000;
+}
+
+.btn-mode,
+.btn-speed {
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+/* ML Controls */
+.ml-controls {
+  flex-wrap: wrap;
+}
+
+.ml-controls .separator {
+  opacity: 0.3;
+  margin: 0 2px;
+}
+
 /* Toast Notifications */
 .toast {
   position: absolute;
