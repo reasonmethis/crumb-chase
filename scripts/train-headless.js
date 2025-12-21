@@ -33,18 +33,21 @@ function runTraining(numEpisodes = 500, verbose = true) {
   const agent = new QLearningAgent();
 
   // Try to load existing Q-table
+  let startingEpisodes = 0;
   if (existsSync(TRAINING_CONFIG.saveFile)) {
     try {
       const data = JSON.parse(readFileSync(TRAINING_CONFIG.saveFile, 'utf8'));
       agent.importQTable(data);
-      console.log(`Loaded existing Q-table: ${agent.qTable.size} states, ${agent.stats.episodes} episodes`);
+      startingEpisodes = agent.stats.episodes;
+      console.log(`Loaded existing Q-table: ${agent.qTable.size} states, ${startingEpisodes} episodes trained`);
+      console.log(`Continuing training from episode ${startingEpisodes + 1}...\n`);
     } catch (e) {
-      console.log('Could not load existing Q-table, starting fresh');
+      console.log('Could not load existing Q-table, starting fresh\n');
     }
   }
 
   const stats = {
-    episodes: 0,
+    episodes: 0,          // Episodes in this run
     wins: 0,
     catches: 0,
     totalReward: 0,
@@ -103,8 +106,9 @@ function runTraining(numEpisodes = 500, verbose = true) {
       const avgReward = stats.recentRewards.reduce((a, b) => a + b, 0) / stats.recentRewards.length;
       const winRate = stats.recentWins.reduce((a, b) => a + b, 0) / stats.recentWins.length;
       const avgSteps = stats.totalSteps / stats.episodes;
+      const cumulativeEpisodes = startingEpisodes + ep + 1;
 
-      console.log(`Episode ${ep + 1}/${numEpisodes} | ` +
+      console.log(`Episode ${ep + 1}/${numEpisodes} (Total: ${cumulativeEpisodes}) | ` +
         `Avg Reward: ${avgReward.toFixed(1)} | ` +
         `Win Rate: ${(winRate * 100).toFixed(1)}% | ` +
         `Epsilon: ${agent.epsilon.toFixed(3)} | ` +
@@ -124,17 +128,19 @@ function runTraining(numEpisodes = 500, verbose = true) {
   // Final summary
   const avgReward = stats.recentRewards.reduce((a, b) => a + b, 0) / stats.recentRewards.length;
   const winRate = stats.recentWins.reduce((a, b) => a + b, 0) / stats.recentWins.length;
+  const cumulativeTotal = startingEpisodes + stats.episodes;
 
   console.log('\n========== TRAINING COMPLETE ==========');
-  console.log(`Total Episodes: ${stats.episodes}`);
-  console.log(`Total Wins: ${stats.wins} (${(stats.wins / stats.episodes * 100).toFixed(1)}%)`);
+  console.log(`Episodes This Run: ${stats.episodes}`);
+  console.log(`Cumulative Total: ${cumulativeTotal} episodes`);
+  console.log(`Wins This Run: ${stats.wins} (${(stats.wins / stats.episodes * 100).toFixed(1)}%)`);
   console.log(`Final Avg Reward (last 100): ${avgReward.toFixed(1)}`);
   console.log(`Final Win Rate (last 100): ${(winRate * 100).toFixed(1)}%`);
   console.log(`Final Epsilon: ${agent.epsilon.toFixed(3)}`);
-  console.log(`Q-Table Size: ${agent.qTable.size}`);
+  console.log(`Q-Table Size: ${agent.qTable.size} states`);
   console.log(`Avg Steps/Episode: ${(stats.totalSteps / stats.episodes).toFixed(0)}`);
 
-  return { stats, agent };
+  return { stats, agent, startingEpisodes };
 }
 
 // ============================================
