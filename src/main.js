@@ -319,5 +319,6 @@ function loop(ts) {
 // ============================================
 // Start Game
 // ============================================
+setActiveMode(TrainingMode.HUMAN);
 startLevel(true);
 requestAnimationFrame(loop);
