@@ -26,6 +26,9 @@ Desktop.ini
 *.temp
 *.log
 
+# ML Training Data
+qtable-trained.json
+
 # Node modules (if ever needed)
 node_modules/
 
