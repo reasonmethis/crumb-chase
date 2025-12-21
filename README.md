@@ -4,10 +4,11 @@ Tiny, dependency‑free canvas game. You're a mouse trying to reach the hole on 
 
 ## Play
 
-- Open `index.html` in a modern browser
-- Or serve locally to avoid file:// issues:
-  - Python: `python -m http.server`
-  - Node: `npx serve`
+Requires a local web server (ES6 modules don't work with `file://`):
+- `npx serve` (recommended)
+- `python -m http.server`
+
+Then open `http://localhost:3000` (or the port shown)
 
 ## Controls
 
