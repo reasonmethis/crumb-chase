@@ -4,7 +4,9 @@ Tiny, dependency‑free canvas game. You're a mouse trying to reach the hole on 
 
 ## Play
 
-Requires a local web server (ES6 modules don't work with `file://`):
+**Play online:** https://reasonmethis.github.io/crumb-chase/
+
+Or run locally (requires a local web server since ES6 modules don't work with `file://`):
 - `npx serve` (recommended)
 - `python -m http.server`
 
